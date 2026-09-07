@@ -1,18 +1,18 @@
 # Changelog
 
-All notable changes to qtAstralQOL are documented here.
 Versions are `1.1` through `1.20`, then `2.0`.
 
 
 ## [1.2](https://github.com/RosemyneH/qtAstralQOL/releases/tag/v1.2) (2026-09-07)
 
-### Features
-
-* Same gem overlay set as 1.1, tagged on the 1.n line
+No addon changes. Version bump only.
 
 
 ## [1.1](https://github.com/RosemyneH/qtAstralQOL/releases/tag/v1.1) (2026-09-07)
 
-### Features
+Switched the version line to `1.n` (no patch). No addon behavior changes.
 
-* Astral gem overlays: event color pips, spell icons, picker filters, disenchant toasts, character and inspect docks, deposit all
+
+## [1.0.0](https://github.com/RosemyneH/qtAstralQOL/releases/tag/v1.0.0) (2026-09-07)
+
+First public drop of the gem overlay addon.
