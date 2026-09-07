@@ -1034,14 +1034,68 @@ local function RenderTable(w)
     return y
 end
 
+local MIN_W, MIN_H = 240, 180
+
+local function ScreenMaxH()
+    return math.max(MIN_H, math.floor((UIParent:GetHeight() or 768) - 80))
+end
+
+local function DefaultHeight(parent)
+    local qh = ((parent and parent:GetHeight()) or 480) - 24
+    local cap = math.floor((UIParent:GetHeight() or 768) * 0.62)
+    return math.max(MIN_H, math.min(qh, cap, ScreenMaxH()))
+end
+
+local function ApplyPanelSize()
+    if not panel then return end
+    local parent = QuestFrame()
+    if not parent then return end
+    local db = Q.DB()
+    local w = tonumber(db.callboardW) or 298
+    local h = tonumber(db.callboardH) or DefaultHeight(parent)
+    w = math.max(MIN_W, math.min(420, w))
+    h = math.max(MIN_H, math.min(ScreenMaxH(), h))
+    db.callboardW, db.callboardH = w, h
+    panel:SetResizable(true)
+    panel:SetMinResize(MIN_W, MIN_H)
+    panel:SetMaxResize(420, ScreenMaxH())
+    panel:ClearAllPoints()
+    panel:SetPoint("TOPLEFT", parent, "TOPRIGHT", 4, -12)
+    panel:SetWidth(w)
+    panel:SetHeight(h)
+end
+
+local function SavePanelSize()
+    if not panel then return end
+    local db = Q.DB()
+    db.callboardW = math.floor((panel:GetWidth() or 298) + 0.5)
+    db.callboardH = math.floor((panel:GetHeight() or 320) + 0.5)
+end
+
+local function SkinHeaderButton(b)
+    if not b then return end
+    local E = _G.ElvUI and _G.ElvUI[1]
+    local S = E and E.GetModule and E:GetModule("Skins", true)
+    if S and S.HandleButton then
+        S:HandleButton(b, true)
+        return
+    end
+    if b.SetTemplate then
+        b:SetTemplate("Default", true)
+        return
+    end
+    local PA = Q.PA()
+    if PA and PA.UI and PA.UI.CosmicButton then
+        PA.UI.CosmicButton(b)
+    end
+end
+
 local function MakePanel()
     local parent = QuestFrame()
     if not parent then return end
     if panel then return panel end
     panel = CreateFrame("Frame", "qtAstralQOL_PartyCallboard", parent)
-    panel:SetWidth(298)
-    panel:SetPoint("TOPLEFT", parent, "TOPRIGHT", 4, -12)
-    panel:SetPoint("BOTTOMLEFT", parent, "BOTTOMRIGHT", 4, 12)
+    ApplyPanelSize()
     panel:SetBackdrop({
         bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -1055,7 +1109,7 @@ local function MakePanel()
     title:SetPoint("TOPLEFT", 12, -10)
     title:SetText("Party Callboard")
 
-    toggleBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    toggleBtn = CreateFrame("Button", "qtAstralQOL_CallboardToggle", panel, "UIPanelButtonTemplate")
     toggleBtn:SetSize(64, 18)
     toggleBtn:SetPoint("TOPRIGHT", -10, -8)
     toggleBtn:SetScript("OnClick", function()
@@ -1067,12 +1121,14 @@ local function MakePanel()
         end
         Q.RefreshCallboardPanel()
     end)
+    SkinHeaderButton(toggleBtn)
 
-    local boardBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local boardBtn = CreateFrame("Button", "qtAstralQOL_CallboardBoard", panel, "UIPanelButtonTemplate")
     boardBtn:SetSize(52, 18)
     boardBtn:SetPoint("RIGHT", toggleBtn, "LEFT", -4, 0)
     boardBtn:SetText("Board")
     boardBtn:SetScript("OnClick", Q.OpenDailyCallboard)
+    SkinHeaderButton(boardBtn)
 
     scroll = CreateFrame("ScrollFrame", "qtAstralQOL_PartyCallboardScroll", panel)
     scroll:SetPoint("TOPLEFT", 8, -32)
@@ -1176,6 +1232,32 @@ local function MakePanel()
     emptyLabel:SetTextColor(0.55, 0.55, 0.6)
     emptyLabel:Hide()
 
+    local grip = CreateFrame("Button", nil, panel)
+    grip:SetSize(16, 16)
+    grip:SetPoint("BOTTOMRIGHT", -1, 1)
+    grip:SetFrameLevel(panel:GetFrameLevel() + 8)
+    grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatFrame-ResizeGrip")
+    grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatFrame-ResizeGrip")
+    grip:SetScript("OnMouseDown", function()
+        panel:StartSizing("BOTTOMRIGHT")
+    end)
+    grip:SetScript("OnMouseUp", function()
+        panel:StopMovingOrSizing()
+        SavePanelSize()
+        ApplyPanelSize()
+        Q.RefreshCallboardPanel()
+    end)
+    grip:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Resize")
+        GameTooltip:AddLine("Drag to change callboard height and width. Saved per character.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    grip:SetScript("OnLeave", GameTooltip_Hide)
+    panel:SetScript("OnSizeChanged", function()
+        if panel.LayoutThumb then panel.LayoutThumb() end
+    end)
+
     return panel
 end
 
@@ -1227,6 +1309,7 @@ function Q.ShowCallboardPanel()
     if Q.DB().callboard == false then return end
     MakePanel()
     if not panel then return end
+    ApplyPanelSize()
     panel:Show()
     Q.RefreshCallboardPanel()
     Q.RequestCallboardSync()
@@ -1268,6 +1351,7 @@ function Q.Defaults()
     d.callboard = true
     d.notify = true
     if d.callboardView == nil then d.callboardView = "party" end
+    if d.callboardW == nil then d.callboardW = 298 end
     return d
 end
 
