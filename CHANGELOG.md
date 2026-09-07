@@ -3,6 +3,19 @@
 Versions are `1.1` through `1.20`, then `2.0`.
 
 
+## [1.5](https://github.com/RosemyneH/qtAstralQOL/releases/tag/v1.5) (2026-09-07)
+
+### Features
+
+* Party callboard is resizable; size is saved per character
+* Gem sockets overlay paperdoll and inspect slots with quality chrome
+* Named gem loadouts with share codes on the Astral gem tab
+
+### Bug Fixes
+
+* New-family toasts use stash stock counts for owned families
+
+
 ## [1.4](https://github.com/RosemyneH/qtAstralQOL/releases/tag/v1.4) (2026-09-07)
 
 ### Features
