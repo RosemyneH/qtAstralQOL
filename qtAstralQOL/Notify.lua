@@ -39,11 +39,11 @@ function Q.RememberOwnedFamilies()
     local catalog = Q.Catalog()
     if not next(catalog) then return end
     local stock = Q.Stock()
-    for entry, cat in pairs(catalog) do
-        local family = cat and cat.family
-        if family and family ~= "" and not knownFamilies[family] then
-            local owned = (tonumber(stock[entry]) or 0) > 0 or (GetItemCount(entry) or 0) > 0
-            if owned then knownFamilies[family] = true end
+    for entry, count in pairs(stock) do
+        if (tonumber(count) or 0) > 0 then
+            local cat = catalog[entry]
+            local family = cat and cat.family
+            if family and family ~= "" then knownFamilies[family] = true end
         end
     end
     local PA = Q.PA()
