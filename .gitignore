@@ -1,0 +1,11 @@
+.DS_Store
+Thumbs.db
+desktop.ini
+*.bak
+*.orig
+*.zip
+dist/
+.idea/
+.vscode/
+*.swp
+*~
