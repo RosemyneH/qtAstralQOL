@@ -10,10 +10,24 @@ local function EnsurePip(socket)
     return pip
 end
 
+local function EnsureBang(socket)
+    if socket._qolBang then return socket._qolBang end
+    local bang = socket:CreateFontString(nil, "OVERLAY")
+    local path = GameFontNormal:GetFont()
+    bang:SetFont(path, 11, "OUTLINE")
+    bang:SetPoint("TOPLEFT", -2, 3)
+    bang:SetText("!")
+    bang:SetTextColor(1, 0.12, 0.12)
+    bang:Hide()
+    socket._qolBang = bang
+    return bang
+end
+
 function Q.PaintSockets(panel, source)
     if not (panel and panel.boxes) then return end
     source = source or {}
     local catalog = Q.Catalog()
+    local skipUpgrade = panel.readonly or panel == Q.inspectDock
     for schemaIdx = 1, 6 do
         local box = panel.boxes[schemaIdx]
         local schema = Q.SLOT_SCHEMA[schemaIdx]
@@ -22,6 +36,7 @@ function Q.PaintSockets(panel, source)
                 local data = source[schema.ord] and source[schema.ord][i - 1]
                 local gemId = data and data.gemId
                 local pip = EnsurePip(s)
+                local bang = EnsureBang(s)
                 if gemId and gemId > 0 then
                     local cat = catalog[gemId]
                     local ev = (cat and tonumber(cat.eventType)) or 6
@@ -29,9 +44,15 @@ function Q.PaintSockets(panel, source)
                     local rgb = Q.EVENT_RGB[ev]
                     pip:SetVertexColor(rgb[1], rgb[2], rgb[3], 1)
                     pip:Show()
+                    if not skipUpgrade and Q.HasHigherTierAvailable(cat and cat.family, cat and cat.tier) then
+                        bang:Show()
+                    else
+                        bang:Hide()
+                    end
                 else
                     if s.icon then s.icon:SetVertexColor(1, 1, 1, 1) end
                     pip:Hide()
+                    bang:Hide()
                 end
             end
         end
@@ -76,6 +97,9 @@ local function BindSocket(s, readonly)
                     local n = Q.FamilyTierCount(cat.family, cat.tier)
                     GameTooltip:AddLine(string.format("Stash fusion: %d/3 (T%d %s)",
                         Q.FusionPips(n), cat.tier or 0, cat.family), 0.8, 0.85, 1)
+                    if Q.HasHigherTierAvailable(cat.family, cat.tier) then
+                        GameTooltip:AddLine("Higher tier available.", 1, 0.25, 0.2)
+                    end
                 end
                 GameTooltip:Show()
             end
@@ -372,6 +396,9 @@ local function MakeMiniSocket(parent, ord, idx, size, readonly, color)
             local cat = Q.Cat(data.gemId)
             if cat then
                 Q.AddEventTooltip(cat.eventType)
+                if not readonly and Q.HasHigherTierAvailable(cat.family, cat.tier) then
+                    GameTooltip:AddLine("Higher tier available.", 1, 0.25, 0.2)
+                end
             end
             if not data.active then
                 GameTooltip:AddLine("Inactive — item quality too low.", 1, 0.4, 0.4)

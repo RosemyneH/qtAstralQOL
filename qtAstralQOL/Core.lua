@@ -78,6 +78,7 @@ function Q.Defaults()
         extractPreset = "",
         gemLoadouts = {},
         gemLoadoutLast = "PvE",
+        gemLoadoutBestRank = true,
     }
 end
 
@@ -388,6 +389,105 @@ function Q.FamilyTierCount(family, tier, stock)
         end
     end
     return n
+end
+
+function Q.HasHigherTierAvailable(family, tier)
+    if not family or family == "" then return false end
+    tier = tonumber(tier) or 0
+    local stock = Q.Stock()
+    for entry, c in pairs(Q.Catalog()) do
+        if c and c.family == family and not c.isMythic then
+            local t = tonumber(c.tier) or 0
+            if t > tier then
+                if (tonumber(stock[entry]) or 0) > 0 then return true end
+                if (GetItemCount(entry) or 0) > 0 then return true end
+            end
+        end
+    end
+    return false
+end
+
+function Q.ResolveLoadoutIds(ids)
+    local out = {}
+    for i = 1, #(ids or {}) do
+        out[i] = tonumber(ids[i]) or 0
+    end
+    local sub, miss = 0, 0
+    local fallback = Q.DB().gemLoadoutBestRank
+    local stock = Q.Stock()
+    local catalog = Q.Catalog()
+    local pool = {}
+
+    local function add(id, n)
+        id, n = tonumber(id), tonumber(n) or 0
+        if id and id > 0 and n > 0 then
+            pool[id] = (pool[id] or 0) + n
+        end
+    end
+    for id, n in pairs(stock) do add(id, n) end
+    if Q.CaptureLoadout then
+        for _, id in ipairs(Q.CaptureLoadout()) do add(id, 1) end
+    end
+
+    local famGems = {}
+    if fallback then
+        for entry, c in pairs(catalog) do
+            if c and c.family and c.family ~= "" and not c.isMythic then
+                local list = famGems[c.family]
+                if not list then
+                    list = {}
+                    famGems[c.family] = list
+                end
+                list[#list + 1] = { id = entry, tier = tonumber(c.tier) or 0 }
+            end
+        end
+        for _, list in pairs(famGems) do
+            table.sort(list, function(a, b) return a.tier > b.tier end)
+        end
+    end
+
+    local function take(id)
+        if not id or id <= 0 then return end
+        local n = pool[id]
+        if not n then
+            n = (GetItemCount and GetItemCount(id)) or 0
+            pool[id] = n
+        end
+        if n > 0 then
+            pool[id] = n - 1
+            return true
+        end
+    end
+
+    for i, want in ipairs(out) do
+        if want > 0 then
+            if take(want) then
+                -- exact gem
+            elseif fallback then
+                local pick = 0
+                local c = catalog[want]
+                local list = c and not c.isMythic and c.family and famGems[c.family]
+                if list then
+                    local wantTier = tonumber(c.tier) or 0
+                    for j = 1, #list do
+                        if list[j].tier <= wantTier and take(list[j].id) then
+                            pick = list[j].id
+                            break
+                        end
+                    end
+                end
+                out[i] = pick
+                if pick > 0 then
+                    sub = sub + 1
+                else
+                    miss = miss + 1
+                end
+            else
+                miss = miss + 1
+            end
+        end
+    end
+    return out, sub, miss
 end
 
 function Q.DepositAll()

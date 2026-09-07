@@ -175,6 +175,10 @@ function Q.ApplyGemLoadout(ids)
         UIErrorsFrame:AddMessage("Invalid gem loadout code.", 1, 0.45, 0.45, 1)
         return
     end
+    local sub, miss = 0, 0
+    if Q.ResolveLoadoutIds then
+        ids, sub, miss = Q.ResolveLoadoutIds(ids)
+    end
     local slots = SlotList()
     local cur = Q.CaptureLoadout()
     queue, qn = {}, 1
@@ -206,7 +210,14 @@ function Q.ApplyGemLoadout(ids)
         if not step then
             self:SetScript("OnUpdate", nil)
             applying = false
-            UIErrorsFrame:AddMessage("Gem loadout applied.", 0.6, 1, 0.6, 1)
+            local msg = "Gem loadout applied."
+            if sub > 0 then
+                msg = msg .. " " .. sub .. " used highest owned rank."
+            end
+            if miss > 0 then
+                msg = msg .. " " .. miss .. " skipped (missing)."
+            end
+            UIErrorsFrame:AddMessage(msg, 0.6, 1, 0.6, 1)
             if _G.AIO and _G.AIO.Handle then
                 _G.AIO.Handle("AstralgemServer", "RequestLoadout")
             end
@@ -225,6 +236,33 @@ function Q.LoadGemLoadout(name)
     end
     Q.DB().gemLoadoutLast = name
     Q.ApplyGemLoadout(code)
+end
+
+local function MakeBestRankOpt(parent)
+    local row = CreateFrame("Frame", nil, parent)
+    row:SetHeight(18)
+    local chk = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+    chk:SetPoint("LEFT", -6, 0)
+    chk:SetScale(0.72)
+    local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("LEFT", 22, 0)
+    label:SetText("Use highest owned rank")
+    label:SetTextColor(0.82, 0.90, 0.98)
+    chk:SetScript("OnClick", function(self)
+        Q.DB().gemLoadoutBestRank = self:GetChecked() and true or false
+        if row.onToggle then row.onToggle() end
+    end)
+    chk:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Highest owned rank")
+        GameTooltip:AddLine("If a loadout gem is missing, socket the best tier you have of that family (T3 → T1).", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    chk:SetScript("OnLeave", GameTooltip_Hide)
+    function row:Refresh()
+        chk:SetChecked(Q.DB().gemLoadoutBestRank and true or false)
+    end
+    return row
 end
 
 local share
@@ -285,6 +323,10 @@ local function ShowShare(text, importMode)
         close:SetPoint("BOTTOM", -100, 14)
         close:SetText("Close")
         close:SetScript("OnClick", function() f:Hide() end)
+
+        f.rankOpt = MakeBestRankOpt(f)
+        f.rankOpt:SetPoint("BOTTOMLEFT", 18, 40)
+        f.rankOpt:SetPoint("BOTTOMRIGHT", -18, 40)
         share = f
     end
     share.importMode = importMode
@@ -300,6 +342,9 @@ local function ShowShare(text, importMode)
         share.link:Hide()
         share.ok:ClearAllPoints()
         share.ok:SetPoint("BOTTOM", 50, 14)
+        share:SetHeight(248)
+        share.rankOpt:Show()
+        share.rankOpt:Refresh()
     else
         share.title:SetText("Export gem loadout")
         share.hint:SetText("Ctrl+A, Ctrl+C — or post a chat link.")
@@ -310,6 +355,8 @@ local function ShowShare(text, importMode)
         share.link:Show()
         share.ok:ClearAllPoints()
         share.ok:SetPoint("BOTTOM", 100, 14)
+        share:SetHeight(220)
+        share.rankOpt:Hide()
     end
     share:Show()
     share.edit:SetFocus()
@@ -436,6 +483,8 @@ local function MakeGemCell(parent, size, mouse)
             if cat then Q.AddEventTooltip(cat.eventType) end
             if self._missing then
                 GameTooltip:AddLine("Not in stash or sockets.", 1, 0.45, 0.45)
+            elseif self._sub and self._wanted and self._wanted ~= self._id then
+                GameTooltip:AddLine("Using highest owned rank (loadout: " .. GemLabel(self._wanted) .. ").", 1, 0.86, 0.40, true)
             end
             GameTooltip:Show()
         end)
@@ -444,15 +493,19 @@ local function MakeGemCell(parent, size, mouse)
     return b
 end
 
-local function PaintCell(b, id, color, missing)
+local function PaintCell(b, id, color, missing, sub, wanted)
     b._id = id
     b._missing = missing
+    b._sub = sub
+    b._wanted = wanted
     local rgb = Q.QUALITY_RGB[color] or Q.QUALITY_RGB[3]
     b.ring:SetVertexColor(rgb[1], rgb[2], rgb[3], 0.95)
     if id and id > 0 then
         Q.SetGemIcon(b.icon, id)
         if missing then
             b.icon:SetVertexColor(1, 0.42, 0.42, 1)
+        elseif sub then
+            b.icon:SetVertexColor(1, 0.86, 0.40, 1)
         else
             b.icon:SetVertexColor(1, 1, 1, 1)
         end
@@ -493,24 +546,29 @@ local function BuildGrid(parent, iconSize, mouse)
         y = y + iconSize + 6
     end
     grid.height = y
-    function grid:Paint(ids)
-        local miss = MissingMap(ids)
+    function grid:Paint(ids, resolved)
+        resolved = resolved or ids
+        local owned = MissingMap(ids)
         local n = 0
-        local missing = 0
+        local missing, subs = 0, 0
         for ri, sc in ipairs(Q.SLOT_SCHEMA) do
             local row = self.rows[ri]
             local labels = {}
             for gi = 1, sc.n do
                 n = n + 1
-                local id = ids[n] or 0
-                local gone = id > 0 and miss[id]
+                local orig = ids[n] or 0
+                local use = resolved[n] or 0
+                local sub = orig > 0 and use > 0 and orig ~= use
+                local gone = orig > 0 and (use == 0 or (use == orig and owned[orig]))
                 if gone then missing = missing + 1 end
-                PaintCell(row.cells[gi], id, sc.colors and sc.colors[gi] or 3, gone)
-                if id > 0 then labels[#labels + 1] = GemLabel(id) end
+                if sub then subs = subs + 1 end
+                local shown = (use > 0 and use) or orig
+                PaintCell(row.cells[gi], shown, sc.colors and sc.colors[gi] or 3, gone, sub, orig)
+                if shown > 0 then labels[#labels + 1] = GemLabel(shown) end
             end
             row.names:SetText(table.concat(labels, "  ·  "))
         end
-        return missing
+        return missing, subs
     end
     return grid
 end
@@ -641,6 +699,13 @@ local function ShowLoadoutOffer(name, ids, code)
         f.miss:SetPoint("RIGHT", -16, 0)
         f.miss:SetJustifyH("LEFT")
 
+        f.rankOpt = MakeBestRankOpt(f)
+        f.rankOpt:SetPoint("BOTTOMLEFT", 16, 40)
+        f.rankOpt:SetPoint("BOTTOMRIGHT", -16, 40)
+        f.rankOpt.onToggle = function()
+            if Q.RefreshLoadoutOffer then Q.RefreshLoadoutOffer() end
+        end
+
         f.save = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
         f.save:SetSize(90, 22)
         f.save:SetPoint("BOTTOM", -100, 14)
@@ -669,17 +734,33 @@ local function ShowLoadoutOffer(name, ids, code)
     offer._ids = ids
     offer._code = code
     offer.nameBox:SetText(name)
-    local missing = offer.grid:Paint(ids)
-    if missing > 0 then
+    offer.rankOpt:Refresh()
+    Q.RefreshLoadoutOffer()
+    offer:Show()
+    offer.nameBox:ClearFocus()
+end
+
+function Q.RefreshLoadoutOffer()
+    if not (offer and offer._ids) then return end
+    local resolved = offer._ids
+    if Q.ResolveLoadoutIds then
+        resolved = Q.ResolveLoadoutIds(offer._ids)
+    end
+    local missing, subs = offer.grid:Paint(offer._ids, resolved)
+    if missing > 0 and subs > 0 then
+        offer.miss:SetText(subs .. " will use your highest rank.  " .. missing .. " still missing.")
+        offer.miss:SetTextColor(1, 0.72, 0.40)
+    elseif subs > 0 then
+        offer.miss:SetText(subs .. " gem" .. (subs == 1 and "" or "s") .. " will use your highest owned rank.")
+        offer.miss:SetTextColor(1, 0.86, 0.40)
+    elseif missing > 0 then
         offer.miss:SetText(missing .. " gem" .. (missing == 1 and "" or "s") .. " missing from stash.")
         offer.miss:SetTextColor(1, 0.55, 0.45)
     else
         offer.miss:SetText("All gems are in stash or already socketed.")
         offer.miss:SetTextColor(0.55, 0.90, 0.62)
     end
-    offer:SetHeight(76 + offer.grid.height + 52)
-    offer:Show()
-    offer.nameBox:ClearFocus()
+    offer:SetHeight(76 + offer.grid.height + 74)
 end
 
 local function HandleLoadoutLink(link, text)
@@ -808,6 +889,11 @@ function Q.LoadoutSlash(msg)
         if arg ~= "" then Q.ApplyGemLoadout(arg) else Q.ImportGemLoadout() end
     elseif cmd == "link" or cmd == "share" then
         Q.InsertLoadoutLink(arg ~= "" and arg or nil)
+    elseif cmd == "rank" or cmd == "bestrank" then
+        local db = Q.DB()
+        db.gemLoadoutBestRank = not db.gemLoadoutBestRank
+        DEFAULT_CHAT_FRAME:AddMessage("|cff80e0ffqtAstralQOL|r highest owned rank: " .. (db.gemLoadoutBestRank and "on" or "off"))
+        if Q.RefreshLoadoutOffer then Q.RefreshLoadoutOffer() end
     elseif cmd == "save" then
         Q.SaveGemLoadout(arg)
     elseif cmd == "load" or cmd == "apply" then
@@ -815,7 +901,7 @@ function Q.LoadoutSlash(msg)
     elseif cmd == "delete" or cmd == "del" or cmd == "remove" then
         Q.DeleteGemLoadout(arg)
     else
-        DEFAULT_CHAT_FRAME:AddMessage("|cff80e0ffqtAstralQOL|r  /qgems loadout export  |  import  |  link  |  save Name  |  load Name  |  delete Name")
+        DEFAULT_CHAT_FRAME:AddMessage("|cff80e0ffqtAstralQOL|r  /qgems loadout export  |  import  |  link  |  rank  |  save Name  |  load Name  |  delete Name")
     end
 end
 
