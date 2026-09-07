@@ -20,15 +20,60 @@ function Q.IsExtractSkipped(itemId)
     return itemId and SkipMap()[itemId] and true or false
 end
 
-function Q.OpenAstralDisenchant()
+local pendingAnchor
+local openWait
+
+local function PresentAstralDisenchant()
     local f = _G.ProjectAstralAstralDisenchant
-    if f then
-        f:Show()
+    if not f then return false end
+    f:SetFrameStrata("FULLSCREEN_DIALOG")
+    f:SetToplevel(true)
+    local anchor = pendingAnchor
+    if type(anchor) == "table" and anchor.IsShown and anchor:IsShown() then
+        f:ClearAllPoints()
+        f:SetPoint("LEFT", anchor, "RIGHT", 12, 0)
+    end
+    f:Show()
+    f:Raise()
+    if not f._qolRaiseHook then
+        f._qolRaiseHook = true
+        f:HookScript("OnShow", function(self)
+            self:SetFrameStrata("FULLSCREEN_DIALOG")
+            self:Raise()
+        end)
+    end
+    return true
+end
+
+function Q.ToggleAstralDisenchant(anchor)
+    local f = _G.ProjectAstralAstralDisenchant
+    if f and f:IsShown() then
+        f:Hide()
+        if openWait then openWait:SetScript("OnUpdate", nil) end
         return
+    end
+    Q.OpenAstralDisenchant(anchor)
+end
+
+function Q.OpenAstralDisenchant(anchor)
+    pendingAnchor = anchor
+    local PA = Q.PA()
+    if PA and PA.disenchant and PA.disenchant.Open then
+        PA.disenchant.Open()
     end
     if _G.AIO and _G.AIO.Handle then
         _G.AIO.Handle("AstralDisenchantServer", "Open")
     end
+    if PresentAstralDisenchant() then return end
+    if openWait then openWait:SetScript("OnUpdate", nil) end
+    openWait = CreateFrame("Frame")
+    local t = 0
+    openWait:SetScript("OnUpdate", function(self, dt)
+        t = t + dt
+        if PresentAstralDisenchant() or t > 4 then
+            self:SetScript("OnUpdate", nil)
+        end
+    end)
 end
 
 local function ItemIdFromLink(link)

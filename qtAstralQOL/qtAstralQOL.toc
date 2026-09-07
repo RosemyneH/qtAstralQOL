@@ -16,4 +16,5 @@ Gems.lua
 Loadout.lua
 Table.lua
 Extract.lua
+Fusion.lua
 LevelReward.lua
