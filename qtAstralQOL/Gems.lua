@@ -254,7 +254,7 @@ end
 
 local function BuildDock(parent, name, readonly)
     local dock = CreateFrame("Frame", name, parent)
-    dock:SetWidth(118)
+    dock:SetWidth(108)
     dock:SetBackdrop({
         bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -265,13 +265,13 @@ local function BuildDock(parent, name, readonly)
     dock:SetBackdropBorderColor(0.32, 0.42, 0.70, 1)
     dock.boxes = {}
 
-    local title = dock:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOP", 0, -8)
+    local title = dock:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    title:SetPoint("TOP", 0, -5)
     title:SetText(readonly and "Gems" or "Astral Gems")
     dock.title = title
 
     local help = CreateFrame("Button", nil, dock)
-    help:SetSize(110, 16)
+    help:SetSize(100, 14)
     help:SetPoint("TOP", title, "TOP", 0, 0)
     help:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -284,36 +284,37 @@ local function BuildDock(parent, name, readonly)
     end)
     help:SetScript("OnLeave", GameTooltip_Hide)
 
-    local y = -26
-    local size = 22
+    local y = -18
+    local size, gap, rowH = 18, 1, 20
     for schemaIdx, schema in ipairs(Q.SLOT_SCHEMA) do
         local box = CreateFrame("Frame", nil, dock)
         box.sockets = {}
-        local h = 14 + schema.n * (size + 2)
-        box:SetSize(100, h)
+        box:SetSize(100, rowH)
         box:SetPoint("TOP", 0, y)
         local lbl = box:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-        lbl:SetPoint("TOP", 0, 0)
+        lbl:SetPoint("LEFT", 4, 0)
+        lbl:SetWidth(34)
+        lbl:SetJustifyH("LEFT")
         lbl:SetText(schema.label)
         for i = 1, schema.n do
             local s = MakeMiniSocket(box, schema.ord, i - 1, size, readonly)
-            s:SetPoint("TOP", 0, -12 - (i - 1) * (size + 2))
+            s:SetPoint("LEFT", 38 + (i - 1) * (size + gap), 0)
             box.sockets[i] = s
         end
         dock.boxes[schemaIdx] = box
-        y = y - h - 2
+        y = y - rowH
     end
 
     if not readonly then
         local dep = CreateFrame("Button", nil, dock, "UIPanelButtonTemplate")
-        dep:SetSize(100, 20)
-        dep:SetPoint("BOTTOM", 0, 8)
+        dep:SetSize(96, 18)
+        dep:SetPoint("BOTTOM", 0, 4)
         dep:SetText("Deposit All")
         dep:SetScript("OnClick", Q.DepositAll)
-        y = y - 28
+        y = y - 22
     end
 
-    dock:SetHeight(math.abs(y) + 18)
+    dock:SetHeight(math.abs(y) + 8)
     return dock
 end
 

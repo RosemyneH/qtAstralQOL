@@ -1,14 +1,15 @@
 ## Interface: 30300
 ## Title: qtAstralQOL
-## Notes: Astral gem overlays - event colors, disenchant toasts, character dock, inspect, deposit all.
+## Notes: Astral gem overlays and party callboard sharing.
 ## Author: Qt
 # x-release-please-start-version
-## Version: 1.2
+## Version: 1.3
 # x-release-please-end
 ## Dependencies: ProjectAstral
 ## SavedVariablesPerCharacter: qtAstralQOL_DB
 
 Core.lua
+Callboard.lua
 Notify.lua
 Picker.lua
 Gems.lua

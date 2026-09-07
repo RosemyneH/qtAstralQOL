@@ -39,6 +39,7 @@
 | **Inspect gems** | Loadout panel on inspect. |
 | **Deposit All** | Extra button on the Astral table to stash every gem and scroll. |
 | **Fusion hints** | Tooltip stash counts toward the next fusion. |
+| **Party callboard** | Quest-log panel with a scroll list. **Table** stacks the same dungeons together; **Party** lists each person. |
 
 </div>
 
