@@ -3,7 +3,7 @@ local Q = qtAstralQOL
 local function EnsurePip(socket)
     if socket._qolPip then return socket._qolPip end
     local pip = socket:CreateTexture(nil, "OVERLAY")
-    pip:SetSize(7, 7)
+    pip:SetSize(socket._pipSize or 7, socket._pipSize or 7)
     pip:SetPoint("TOPRIGHT", 1, 1)
     pip:SetTexture("Interface\\Buttons\\WHITE8X8")
     socket._qolPip = pip
@@ -95,24 +95,122 @@ local function BindSocket(s, readonly)
     end
 end
 
+local SOCK, SOCK_GAP, ROW_GAP = 18, 2, 3
+
+local function QualityUnlocks(schema, idx, unit)
+    if not unit then return false end
+    local need = schema.colors and schema.colors[idx + 1]
+    if not need then return false end
+    local q = GetInventoryItemQuality(unit, schema.invSlot)
+    return q and q >= need
+end
+
+-- ʕ •ᴥ•ʔ✿ empty sockets stay hidden until the equipped item actually unlocks them ✿ ʕ •ᴥ•ʔ
+local function SocketOpen(schema, idx, source, unit)
+    local slot = source and source[schema.ord]
+    if slot then
+        local data = slot[idx]
+        if not data then return false end
+        if data.gemId and data.gemId > 0 then return true end
+        return data.active and true or false
+    end
+    return QualityUnlocks(schema, idx, unit)
+end
+
+local function PaintSocketChrome(s, color)
+    local rgb = Q.QUALITY_RGB[color] or Q.QUALITY_RGB[3]
+    s._qr = rgb
+    if s.ring then s.ring:SetVertexColor(rgb[1], rgb[2], rgb[3], 0.95) end
+end
+
+local function SchemaByOrd(ord)
+    for _, sc in ipairs(Q.SLOT_SCHEMA) do
+        if sc.ord == ord then return sc end
+    end
+end
+
+local function DockAnchor(dock)
+    local a = dock.anchor and _G[dock.anchor]
+    if a then return a end
+    return dock.fallback and _G[dock.fallback]
+end
+
 local function FillDockFromSource(dock, source)
     if not dock then return end
     source = source or {}
+    local unit = dock.unit
+    local prev, maxW, height = nil, SOCK, 0
+
+    for schemaIdx, schema in ipairs(Q.SLOT_SCHEMA) do
+        local box = dock.boxes[schemaIdx]
+        if box then
+            local vis = {}
+            for i, s in ipairs(box.sockets) do
+                local idx = i - 1
+                local data = source[schema.ord] and source[schema.ord][idx]
+                if SocketOpen(schema, idx, source, unit) then
+                    vis[#vis + 1] = s
+                    if data and data.gemId and data.gemId > 0 then
+                        Q.SetGemIcon(s.icon, data.gemId)
+                        s.icon:Show()
+                        if s.inner then s.inner:Hide() end
+                    else
+                        s.icon:Hide()
+                        if s.inner then s.inner:Show() end
+                    end
+                    PaintSocketChrome(s, schema.colors and schema.colors[i])
+                else
+                    s:Hide()
+                end
+            end
+
+            if #vis == 0 then
+                box:Hide()
+            else
+                local w = #vis * (SOCK + SOCK_GAP) - SOCK_GAP
+                box:Show()
+                box:ClearAllPoints()
+                if prev then
+                    box:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -ROW_GAP)
+                    height = height + ROW_GAP
+                else
+                    box:SetPoint("TOPLEFT", dock, "TOPLEFT", 0, 0)
+                end
+                for i, s in ipairs(vis) do
+                    s:ClearAllPoints()
+                    s:SetPoint("LEFT", box, (i - 1) * (SOCK + SOCK_GAP), 0)
+                    s:Show()
+                end
+                box:SetSize(w, SOCK)
+                if w > maxW then maxW = w end
+                height = height + SOCK
+                prev = box
+            end
+        end
+    end
+
+    local anchor = DockAnchor(dock)
+    dock:ClearAllPoints()
+    if anchor then
+        dock:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -6)
+        dock:SetFrameLevel((anchor:GetFrameLevel() or 1) + 8)
+    else
+        dock:SetPoint("TOPLEFT", dock:GetParent(), "TOPLEFT", 16, -80)
+    end
+    dock:SetSize(maxW, math.max(height, 1))
+
+    Q.PaintSockets(dock, source)
     for schemaIdx, schema in ipairs(Q.SLOT_SCHEMA) do
         local box = dock.boxes[schemaIdx]
         if box then
             for i, s in ipairs(box.sockets) do
                 local data = source[schema.ord] and source[schema.ord][i - 1]
-                    if data and data.gemId and data.gemId > 0 then
-                    Q.SetGemIcon(s.icon, data.gemId)
-                    s.icon:Show()
-                else
-                    s.icon:Hide()
+                if s.icon and s.icon:IsShown() and data and data.active == false then
+                    s.icon:SetVertexColor(0.45, 0.45, 0.45, 1)
                 end
             end
         end
     end
-    Q.PaintSockets(dock, source)
 end
 
 local function HookAstralPanel()
@@ -147,83 +245,139 @@ local function HookAstralPanel()
 end
 
 function Q.EnhanceGemTab(panel)
-    if not panel or panel._qolTab then return end
-    panel._qolTab = true
+    if not panel then return end
+    if not panel._qolTab then
+        panel._qolTab = true
 
-    local dep = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    dep:SetSize(150, 22)
-    dep:SetPoint("TOPLEFT", 16, -16)
-    dep:SetText("Deposit All Gems")
-    dep:SetScript("OnClick", Q.DepositAll)
+        local dep = CreateFrame("Button", "qtAstralQOL_GemDeposit", panel, "UIPanelButtonTemplate")
+        dep:SetSize(150, 22)
+        dep:SetPoint("TOPLEFT", 16, -16)
+        dep:SetText("Deposit All Gems")
+        dep:SetScript("OnClick", Q.DepositAll)
+        dep:SetFrameLevel(panel:GetFrameLevel() + 8)
 
-    local legend = CreateFrame("Frame", nil, panel)
-    legend:SetSize(220, 72)
-    legend:SetPoint("TOPLEFT", dep, "BOTTOMLEFT", 0, -8)
-    local ly = 0
-    for _, ev in ipairs({ 0, 1, 2, 3 }) do
-        local eventId = ev
-        local btn = CreateFrame("Button", nil, legend)
-        btn:SetSize(220, 14)
-        btn:SetPoint("TOPLEFT", 0, ly)
-        local line = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        line:SetAllPoints()
-        line:SetJustifyH("LEFT")
-        local rgb = Q.EVENT_RGB[eventId]
-        line:SetTextColor(rgb[1], rgb[2], rgb[3])
-        line:SetText("Proc on " .. Q.EVENT_NAME[eventId])
-        btn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            Q.AddEventTooltip(eventId)
-            GameTooltip:Show()
-        end)
-        btn:SetScript("OnLeave", GameTooltip_Hide)
-        ly = ly - 14
-    end
+        local legend = CreateFrame("Frame", nil, panel)
+        panel._qolDeposit = dep
+        panel._qolLegend = legend
+        legend:SetSize(220, 72)
+        legend:SetPoint("TOPLEFT", dep, "BOTTOMLEFT", 0, -8)
+        local ly = 0
+        for _, ev in ipairs({ 0, 1, 2, 3 }) do
+            local eventId = ev
+            local btn = CreateFrame("Button", nil, legend)
+            btn:SetSize(220, 14)
+            btn:SetPoint("TOPLEFT", 0, ly)
+            local line = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            line:SetAllPoints()
+            line:SetJustifyH("LEFT")
+            local rgb = Q.EVENT_RGB[eventId]
+            line:SetTextColor(rgb[1], rgb[2], rgb[3])
+            line:SetText("Proc on " .. Q.EVENT_NAME[eventId])
+            btn:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                Q.AddEventTooltip(eventId)
+                GameTooltip:Show()
+            end)
+            btn:SetScript("OnLeave", GameTooltip_Hide)
+            ly = ly - 14
+        end
 
-    if panel.boxes then
-        for _, box in pairs(panel.boxes) do
-            if box.sockets then
-                for _, s in ipairs(box.sockets) do
-                    BindSocket(s, s._readonly)
+        if panel.boxes then
+            for _, box in pairs(panel.boxes) do
+                if box.sockets then
+                    for _, s in ipairs(box.sockets) do
+                        BindSocket(s, s._readonly)
+                    end
                 end
             end
         end
     end
+    if Q.AttachLoadoutUI then Q.AttachLoadoutUI(panel) end
+    Q.LayoutGemTab(panel)
 end
 
-local function MakeMiniSocket(parent, ord, idx, size, readonly)
+-- ʕ •ᴥ•ʔ✿ left column: equipped list + loadouts, sockets keep the right ✿ ʕ •ᴥ•ʔ
+function Q.LayoutGemTab(panel)
+    if not panel then return end
+    local list = panel.equippedList
+    local bar = panel._qolLoadoutBar
+    local legend = panel._qolLegend
+    local topInset = 108
+    if legend then
+        local depH = (panel._qolDeposit and panel._qolDeposit:GetHeight()) or 22
+        topInset = 16 + depH + 8 + (legend:GetHeight() or 72) + 10
+    end
+
+    if list then
+        list:ClearAllPoints()
+        list:SetPoint("TOPLEFT", panel, "TOPLEFT", 22, -topInset)
+        local ph = panel:GetHeight() or 0
+        if ph < 80 then ph = 564 end
+        local listH = ph - topInset - 8 - 58 - 12
+        if listH < 220 then listH = 220 end
+        list:SetSize(240, listH)
+    end
+
+    if bar then
+        bar:ClearAllPoints()
+        if list then
+            bar:SetWidth(240)
+            bar:SetPoint("TOPLEFT", list, "BOTTOMLEFT", 0, -8)
+        else
+            bar:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 22, 12)
+        end
+    end
+end
+
+local function MakeMiniSocket(parent, ord, idx, size, readonly, color)
     local s = CreateFrame("Button", nil, parent)
     s:SetSize(size, size)
-    s._ord, s._idx = ord, idx
+    s._ord, s._idx, s._color = ord, idx, color
     s._readonly = readonly
 
     local ring = s:CreateTexture(nil, "BORDER")
     ring:SetAllPoints()
     ring:SetTexture("Interface\\Buttons\\WHITE8X8")
-    ring:SetVertexColor(0.15, 0.18, 0.28, 0.95)
     s.ring = ring
+
+    local inner = s:CreateTexture(nil, "ARTWORK")
+    inner:SetPoint("TOPLEFT", 1, -1)
+    inner:SetPoint("BOTTOMRIGHT", -1, 1)
+    inner:SetTexture("Interface\\Buttons\\WHITE8X8")
+    inner:SetVertexColor(0.06, 0.07, 0.11, 1)
+    s.inner = inner
 
     local icon = s:CreateTexture(nil, "ARTWORK")
     icon:SetPoint("TOPLEFT", 2, -2)
     icon:SetPoint("BOTTOMRIGHT", -2, 2)
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    icon:SetDrawLayer("ARTWORK", 1)
     s.icon = icon
     icon:Hide()
+
+    PaintSocketChrome(s, color)
 
     s:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         local src = readonly and InspectLoadout() or Loadout()
         local data = src[self._ord] and src[self._ord][self._idx]
+        local schema = SchemaByOrd(self._ord)
+        local qName = Q.QUALITY_NAME[self._color] or "Gem"
+        local rgb = Q.QUALITY_RGB[self._color] or Q.QUALITY_RGB[3]
+        local slotLine = (schema and schema.label or "Gem") .. " — " .. qName .. " socket"
         if data and data.gemId and data.gemId > 0 then
             GameTooltip:SetHyperlink("item:" .. data.gemId)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine(slotLine, rgb[1], rgb[2], rgb[3])
             local cat = Q.Cat(data.gemId)
             if cat then
-                GameTooltip:AddLine(" ")
                 Q.AddEventTooltip(cat.eventType)
             end
             if not data.active then
                 GameTooltip:AddLine("Inactive — item quality too low.", 1, 0.4, 0.4)
             end
         else
+            GameTooltip:AddLine(slotLine, rgb[1], rgb[2], rgb[3])
             GameTooltip:AddLine(readonly and "Empty" or "Empty — click to socket", 0.7, 0.7, 0.7)
         end
         GameTooltip:Show()
@@ -233,10 +387,7 @@ local function MakeMiniSocket(parent, ord, idx, size, readonly)
     if not readonly then
         s:SetScript("OnClick", function(self)
             local data = Loadout()[self._ord] and Loadout()[self._ord][self._idx]
-            local schema
-            for _, sc in ipairs(Q.SLOT_SCHEMA) do
-                if sc.ord == self._ord then schema = sc break end
-            end
+            local schema = SchemaByOrd(self._ord)
             if not schema then return end
             if data and data.gemId and data.gemId > 0 then
                 UnsocketGem(schema.equipSlot, self._idx)
@@ -252,76 +403,35 @@ local function MakeMiniSocket(parent, ord, idx, size, readonly)
     return s
 end
 
-local function BuildDock(parent, name, readonly)
+local function BuildDock(parent, name, readonly, anchor, fallback)
     local dock = CreateFrame("Frame", name, parent)
-    dock:SetWidth(108)
-    dock:SetBackdrop({
-        bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 8, edgeSize = 12,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 },
-    })
-    dock:SetBackdropColor(0.04, 0.05, 0.10, 0.92)
-    dock:SetBackdropBorderColor(0.32, 0.42, 0.70, 1)
+    dock:SetSize(1, 1)
+    dock:EnableMouse(false)
     dock.boxes = {}
+    dock.readonly = readonly
+    dock.anchor = anchor
+    dock.fallback = fallback
 
-    local title = dock:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    title:SetPoint("TOP", 0, -5)
-    title:SetText(readonly and "Gems" or "Astral Gems")
-    dock.title = title
-
-    local help = CreateFrame("Button", nil, dock)
-    help:SetSize(100, 14)
-    help:SetPoint("TOP", title, "TOP", 0, 0)
-    help:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Astral gem procs", 1, 0.82, 0)
-        for _, ev in ipairs({ 0, 1, 2, 3 }) do
-            Q.AddEventTooltip(ev)
-            GameTooltip:AddLine(" ")
-        end
-        GameTooltip:Show()
-    end)
-    help:SetScript("OnLeave", GameTooltip_Hide)
-
-    local y = -18
-    local size, gap, rowH = 18, 1, 20
     for schemaIdx, schema in ipairs(Q.SLOT_SCHEMA) do
         local box = CreateFrame("Frame", nil, dock)
+        box:EnableMouse(false)
         box.sockets = {}
-        box:SetSize(100, rowH)
-        box:SetPoint("TOP", 0, y)
-        local lbl = box:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-        lbl:SetPoint("LEFT", 4, 0)
-        lbl:SetWidth(34)
-        lbl:SetJustifyH("LEFT")
-        lbl:SetText(schema.label)
         for i = 1, schema.n do
-            local s = MakeMiniSocket(box, schema.ord, i - 1, size, readonly)
-            s:SetPoint("LEFT", 38 + (i - 1) * (size + gap), 0)
+            local color = schema.colors and schema.colors[i] or 3
+            local s = MakeMiniSocket(box, schema.ord, i - 1, SOCK, readonly, color)
+            s._pipSize = 5
             box.sockets[i] = s
         end
         dock.boxes[schemaIdx] = box
-        y = y - rowH
     end
-
-    if not readonly then
-        local dep = CreateFrame("Button", nil, dock, "UIPanelButtonTemplate")
-        dep:SetSize(96, 18)
-        dep:SetPoint("BOTTOM", 0, 4)
-        dep:SetText("Deposit All")
-        dep:SetScript("OnClick", Q.DepositAll)
-        y = y - 22
-    end
-
-    dock:SetHeight(math.abs(y) + 8)
     return dock
 end
 
 function Q.RefreshCharDock()
     local dock = Q.charDock
     if not dock then return end
-    if Q.DB().charDock and CharacterFrame and CharacterFrame:IsShown() then
+    local host = dock:GetParent()
+    if Q.DB().charDock and host and host:IsShown() then
         dock:Show()
         FillDockFromSource(dock, Loadout())
     else
@@ -331,16 +441,18 @@ end
 
 local function AttachCharDock()
     if Q.charDock or not CharacterFrame then return end
-    local dock = BuildDock(CharacterFrame, "qtAstralQOL_CharGems", false)
-    dock:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", -20, -12)
+    local host = _G.PaperDollFrame or CharacterFrame
+    local dock = BuildDock(host, "qtAstralQOL_CharGems", false,
+        "CharacterModelFrameRotateLeftButton", "CharacterModelFrame")
+    dock.unit = "player"
     Q.charDock = dock
     CharacterFrame:HookScript("OnShow", function()
         Q.RequestGemData()
         Q.RefreshCharDock()
     end)
-    CharacterFrame:HookScript("OnHide", function()
-        if Q.charDock then Q.charDock:Hide() end
-    end)
+    if host ~= CharacterFrame then
+        host:HookScript("OnShow", Q.RefreshCharDock)
+    end
     Q.RefreshCharDock()
 end
 
@@ -355,18 +467,17 @@ end
 
 local function AttachInspectDock()
     if Q.inspectDock or not InspectFrame then return end
-    local dock = BuildDock(InspectFrame, "qtAstralQOL_InspectGems", true)
-    dock:SetPoint("TOPLEFT", InspectFrame, "TOPRIGHT", -20, -12)
+    local host = _G.InspectPaperDollFrame or InspectFrame
+    local dock = BuildDock(host, "qtAstralQOL_InspectGems", true,
+        "InspectModelRotateLeftButton", "InspectModelFrame")
     Q.inspectDock = dock
     dock:Hide()
 
     InspectFrame:HookScript("OnShow", function()
         if not Q.DB().inspectTab then return end
         dock:Show()
-        local unit = InspectFrame.unit or "target"
-        local name = UnitName(unit)
-        dock.title:SetText((name or "Inspect") .. " Gems")
-        RequestInspect(name)
+        dock.unit = InspectFrame.unit or "target"
+        RequestInspect(UnitName(dock.unit))
         FillDockFromSource(dock, InspectLoadout())
     end)
     InspectFrame:HookScript("OnHide", function()
@@ -377,7 +488,12 @@ end
 local boot = CreateFrame("Frame")
 boot:RegisterEvent("PLAYER_LOGIN")
 boot:RegisterEvent("ADDON_LOADED")
+boot:RegisterEvent("UNIT_INVENTORY_CHANGED")
 boot:SetScript("OnEvent", function(_, event, arg1)
+    if event == "UNIT_INVENTORY_CHANGED" then
+        if arg1 == "player" then Q.RefreshCharDock() end
+        return
+    end
     if event == "ADDON_LOADED" then
         if arg1 == "Blizzard_InspectUI" then
             AttachInspectDock()
@@ -406,10 +522,19 @@ boot:SetScript("OnEvent", function(_, event, arg1)
         HookAstralPanel()
         if Q.StealStockPicker then Q.StealStockPicker() end
         local PA = Q.PA()
-        if PA and PA.AstralGems and PA.AstralGems.panel then
-            Q.EnhanceGemTab(PA.AstralGems.panel)
+        local panel = PA and PA.AstralGems and PA.AstralGems.panel
+        if panel then
+            Q.EnhanceGemTab(panel)
+            if not panel._qolShowLoadout then
+                panel._qolShowLoadout = true
+                panel:HookScript("OnShow", function(p)
+                    Q.EnhanceGemTab(p)
+                end)
+            end
         end
-        if acc > 8 then self:SetScript("OnUpdate", nil) end
+        if acc > 30 and panel and panel._qolLoadout then
+            self:SetScript("OnUpdate", nil)
+        end
     end)
 
     local PA = Q.PA()

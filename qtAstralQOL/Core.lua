@@ -45,24 +45,39 @@ function Q.AddEventTooltip(ev)
     end
 end
 
+Q.QUALITY_RGB = {
+    [2] = { 0.12, 1.00, 0.00 },
+    [3] = { 0.00, 0.55, 1.00 },
+    [4] = { 0.64, 0.21, 0.93 },
+    [5] = { 1.00, 0.50, 0.00 },
+}
+
+Q.QUALITY_NAME = {
+    [2] = "Uncommon",
+    [3] = "Rare",
+    [4] = "Epic",
+    [5] = "Legendary",
+}
+
 Q.SLOT_SCHEMA = {
-    { ord = 0, equipSlot = 0,  label = "Head",   n = 1 },
-    { ord = 1, equipSlot = 1,  label = "Neck",   n = 1 },
-    { ord = 2, equipSlot = 4,  label = "Chest",  n = 3 },
-    { ord = 3, equipSlot = 6,  label = "Legs",   n = 3 },
-    { ord = 4, equipSlot = 7,  label = "Boots",  n = 1 },
-    { ord = 5, equipSlot = 15, label = "Weapon", n = 4 },
+    { ord = 0, equipSlot = 0,  invSlot = 1,  paperdoll = "HeadSlot",     corner = "BOTTOMRIGHT", label = "Head",   colors = { 3 },          n = 1 },
+    { ord = 1, equipSlot = 1,  invSlot = 2,  paperdoll = "NeckSlot",     corner = "BOTTOMRIGHT", label = "Neck",   colors = { 4 },          n = 1 },
+    { ord = 2, equipSlot = 4,  invSlot = 5,  paperdoll = "ChestSlot",    corner = "BOTTOMRIGHT", label = "Chest",  colors = { 2, 3, 4 },    n = 3 },
+    { ord = 3, equipSlot = 6,  invSlot = 7,  paperdoll = "LegsSlot",     corner = "BOTTOMLEFT",  label = "Legs",   colors = { 2, 3, 4 },    n = 3 },
+    { ord = 4, equipSlot = 7,  invSlot = 8,  paperdoll = "FeetSlot",     corner = "BOTTOMLEFT",  label = "Boots",  colors = { 2 },          n = 1 },
+    { ord = 5, equipSlot = 15, invSlot = 16, paperdoll = "MainHandSlot", corner = "TOPLEFT",     label = "Weapon", colors = { 2, 3, 4, 5 }, n = 4 },
 }
 
 function Q.Defaults()
-    local allStats = IsAddOnLoaded and IsAddOnLoaded("AllStats")
     return {
         notify     = true,
-        charDock   = not allStats,
+        charDock   = true,
         inspectTab = true,
         extractSkip = {},
         extractPresets = {},
         extractPreset = "",
+        gemLoadouts = {},
+        gemLoadoutLast = "PvE",
     }
 end
 
@@ -78,11 +93,9 @@ function Q.DB()
         qtAstralQOL_DB.notify = true
         qtAstralQOL_DB._notifyDefault = 1
     end
-    if qtAstralQOL_DB._dockAllStats ~= 1 then
-        if IsAddOnLoaded and IsAddOnLoaded("AllStats") then
-            qtAstralQOL_DB.charDock = false
-        end
-        qtAstralQOL_DB._dockAllStats = 1
+    if qtAstralQOL_DB._dockPaperdoll ~= 1 then
+        qtAstralQOL_DB.charDock = true
+        qtAstralQOL_DB._dockPaperdoll = 1
     end
     return qtAstralQOL_DB
 end
@@ -121,7 +134,10 @@ end
 
 local spellIconCache = {}
 local spellByKey = {}
+local wantedKeys = {}
 local scanTip
+local spellIndexReady = false
+local scanStarted = false
 
 local function CleanLabel(s)
     if not s or s == "" then return nil end
@@ -171,7 +187,7 @@ end
 local function RememberSpell(name, icon)
     if not name or not icon or IconScore(icon) <= 0 then return end
     local k = NormKey(name)
-    if not k then return end
+    if not k or not wantedKeys[k] then return end
     local cur = spellByKey[k]
     if not cur or IconScore(icon) > IconScore(cur) then
         spellByKey[k] = icon
@@ -183,6 +199,59 @@ local function LookupByName(label)
     local k = NormKey(label)
     if not k then return nil end
     return spellByKey[k] or spellByKey[k:gsub(" ", "")]
+end
+
+local function RebuildWanted()
+    for k in pairs(wantedKeys) do wantedKeys[k] = nil end
+    for _, cat in pairs(Q.Catalog()) do
+        local a = NormKey(cat.family)
+        local b = NormKey(CleanLabel(cat.name))
+        if a then wantedKeys[a] = true end
+        if b then wantedKeys[b] = true end
+    end
+end
+
+local function WantedFilled()
+    for k in pairs(wantedKeys) do
+        if not spellByKey[k] then return false end
+    end
+    return next(wantedKeys) ~= nil
+end
+
+function Q.RefreshAllGemIcons()
+    local PA = Q.PA()
+    if PA and PA.AstralGems and PA.AstralGems.Render then
+        PA.AstralGems.Render()
+    end
+    if PA and PA.GemStash and PA.GemStash.Refresh then
+        PA.GemStash.Refresh()
+    end
+    if Q.RefreshCharDock then Q.RefreshCharDock() end
+end
+
+local function StartSpellScan()
+    if scanStarted then return end
+    RebuildWanted()
+    if not next(wantedKeys) then return end
+    scanStarted = true
+    local id, MAX = 1, 80000
+    local f = CreateFrame("Frame")
+    f:SetScript("OnUpdate", function(self)
+        RebuildWanted()
+        local n = 0
+        while n < 2000 and id <= MAX do
+            local name, _, icon = GetSpellInfo(id)
+            if name and icon then RememberSpell(name, icon) end
+            id = id + 1
+            n = n + 1
+        end
+        if id > MAX or WantedFilled() then
+            self:SetScript("OnUpdate", nil)
+            spellIndexReady = true
+            for k in pairs(spellIconCache) do spellIconCache[k] = nil end
+            Q.RefreshAllGemIcons()
+        end
+    end)
 end
 
 local function TooltipSpellIcon(entry)
@@ -236,48 +305,16 @@ local function SpellIconForLabel(label)
         spellIconCache[key] = icon
         return icon
     end
-    if Q._spellIndexReady then
+    if spellIndexReady then
         spellIconCache[key] = false
     end
     return nil
 end
 
-function Q.RefreshAllGemIcons()
-    local PA = Q.PA()
-    if PA and PA.AstralGems and PA.AstralGems.Render then
-        PA.AstralGems.Render()
-    end
-    if PA and PA.GemStash and PA.GemStash.Refresh then
-        PA.GemStash.Refresh()
-    end
-    if Q.RefreshCharDock then Q.RefreshCharDock() end
-    if Q.RememberOwnedFamilies then Q.RememberOwnedFamilies() end
-end
-
-local function StartSpellScan()
-    local id = 1
-    local MAX = 120000
-    local f = CreateFrame("Frame")
-    f:SetScript("OnUpdate", function(self)
-        local n = 0
-        while n < 2500 and id <= MAX do
-            local name, _, icon = GetSpellInfo(id)
-            if name and icon then RememberSpell(name, icon) end
-            id = id + 1
-            n = n + 1
-        end
-        if id > MAX then
-            self:SetScript("OnUpdate", nil)
-            for k in pairs(spellIconCache) do spellIconCache[k] = nil end
-            Q._spellIndexReady = true
-            Q.RefreshAllGemIcons()
-        end
-    end)
-end
-
 function Q.GemTexture(entry)
     entry = tonumber(entry)
     if not entry then return "Interface\\Icons\\INV_Misc_QuestionMark" end
+    if not scanStarted then StartSpellScan() end
     local cat = Q.Cat(entry)
     if cat then
         if type(cat.icon) == "string" and IconScore(cat.icon) > 0 then
@@ -300,13 +337,6 @@ function Q.GemTexture(entry)
     return itemIcon or "Interface\\Icons\\INV_Misc_QuestionMark", false
 end
 
-local scanBoot = CreateFrame("Frame")
-scanBoot:RegisterEvent("PLAYER_LOGIN")
-scanBoot:SetScript("OnEvent", function(self)
-    self:UnregisterAllEvents()
-    StartSpellScan()
-end)
-
 function Q.SetGemIcon(tex, entry)
     if not tex then return false end
     local path, isSpell = Q.GemTexture(entry)
@@ -314,6 +344,20 @@ function Q.SetGemIcon(tex, entry)
     tex:SetVertexColor(1, 1, 1, 1)
     return isSpell
 end
+
+local scanBoot = CreateFrame("Frame")
+scanBoot:RegisterEvent("PLAYER_LOGIN")
+scanBoot:SetScript("OnEvent", function(self)
+    self:UnregisterAllEvents()
+    local acc = 0
+    self:SetScript("OnUpdate", function(me, dt)
+        acc = acc + dt
+        if not scanStarted then StartSpellScan() end
+        if scanStarted or acc > 12 then
+            me:SetScript("OnUpdate", nil)
+        end
+    end)
+end)
 
 function Q.GemShortName(entry)
     local cat = Q.Cat(entry)
@@ -372,17 +416,20 @@ end
 SLASH_QTASTRALQOL1 = "/qgems"
 SLASH_QTASTRALQOL2 = "/qolgems"
 SlashCmdList["QTASTRALQOL"] = function(msg)
-    msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+    msg = (msg or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    local key = msg:lower()
     local db = Q.DB()
-    if msg == "notify" then
+    if key == "notify" then
         db.notify = not db.notify
         DEFAULT_CHAT_FRAME:AddMessage("|cff80e0ffqtAstralQOL|r gem toasts: " .. (db.notify and "on" or "off"))
-    elseif msg == "dock" then
+    elseif key == "dock" then
         db.charDock = not db.charDock
         DEFAULT_CHAT_FRAME:AddMessage("|cff80e0ffqtAstralQOL|r character dock: " .. (db.charDock and "on" or "off"))
         if Q.RefreshCharDock then Q.RefreshCharDock() end
-    elseif msg == "deposit" then
+    elseif key == "deposit" then
         Q.DepositAll()
+    elseif key:find("^loadout") then
+        if Q.LoadoutSlash then Q.LoadoutSlash(msg) end
     else
         local PA = Q.PA()
         if PA and PA.AstralGems then
@@ -394,6 +441,6 @@ SlashCmdList["QTASTRALQOL"] = function(msg)
                 if mf._tabBar then mf._tabBar:SelectTab("AstralGems") end
             end
         end
-        DEFAULT_CHAT_FRAME:AddMessage("|cff80e0ffqtAstralQOL|r  /qgems  /qgems deposit  /qgems notify  /qgems dock")
+        DEFAULT_CHAT_FRAME:AddMessage("|cff80e0ffqtAstralQOL|r  /qgems  /qgems deposit  /qgems notify  /qgems dock  /qgems loadout")
     end
 end

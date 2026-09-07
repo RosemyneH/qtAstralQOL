@@ -13,6 +13,7 @@ Callboard.lua
 Notify.lua
 Picker.lua
 Gems.lua
+Loadout.lua
 Table.lua
 Extract.lua
 LevelReward.lua
