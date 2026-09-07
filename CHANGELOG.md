@@ -3,6 +3,18 @@
 Versions are `1.1` through `1.20`, then `2.0`.
 
 
+## [1.7](https://github.com/RosemyneH/qtAstralQOL/releases/tag/v1.7) (2026-09-07)
+
+### Features
+
+* Astral Table actions sit in a two-column button grid with Cosmic styling
+
+### Bug Fixes
+
+* Fusion disenchant button re-anchors after the gem tab rebuilds
+* Higher-tier bang on sockets is larger and easier to see
+
+
 ## [1.6](https://github.com/RosemyneH/qtAstralQOL/releases/tag/v1.6) (2026-09-07)
 
 ### Features

@@ -3,7 +3,7 @@
 ## Notes: Astral gem overlays and party callboard sharing.
 ## Author: Qt
 # x-release-please-start-version
-## Version: 1.6
+## Version: 1.7
 # x-release-please-end
 ## Dependencies: ProjectAstral
 ## SavedVariablesPerCharacter: qtAstralQOL_DB
