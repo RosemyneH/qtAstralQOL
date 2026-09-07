@@ -367,16 +367,12 @@ function Q.HookExtract(frame)
     if frame.qolSkipBtn then return end
 
     local btn = CreateFrame("Button", "qtAstralQOL_ExtractSkipBtn", frame, "UIPanelButtonTemplate")
-    btn:SetSize(70, 26)
-    if frame.qolDepositGems then
-        frame.qolDepositGems:SetWidth(190)
-        frame.qolDepositGems:ClearAllPoints()
-        frame.qolDepositGems:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 18, 12)
-        btn:SetPoint("LEFT", frame.qolDepositGems, "RIGHT", 8, 0)
-    else
-        btn:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 12)
-    end
+    btn:SetSize(160, 28)
     btn:SetText("Skip list")
+    local PA = Q.PA()
+    if PA and PA.UI and PA.UI.CosmicButton then
+        PA.UI.CosmicButton(btn)
+    end
     btn:SetScript("OnClick", function()
         local p = BuildPopup(frame)
         if p:IsShown() then p:Hide() else p:Show() end
@@ -389,4 +385,5 @@ function Q.HookExtract(frame)
     end)
     btn:SetScript("OnLeave", GameTooltip_Hide)
     frame.qolSkipBtn = btn
+    if Q.LayoutAstralTableButtons then Q.LayoutAstralTableButtons(frame) end
 end
