@@ -55,10 +55,14 @@ Q.SLOT_SCHEMA = {
 }
 
 function Q.Defaults()
+    local allStats = IsAddOnLoaded and IsAddOnLoaded("AllStats")
     return {
         notify     = true,
-        charDock   = true,
+        charDock   = not allStats,
         inspectTab = true,
+        extractSkip = {},
+        extractPresets = {},
+        extractPreset = "",
     }
 end
 
@@ -69,6 +73,16 @@ function Q.DB()
     local d = Q.Defaults()
     for k, v in pairs(d) do
         if qtAstralQOL_DB[k] == nil then qtAstralQOL_DB[k] = v end
+    end
+    if qtAstralQOL_DB._notifyDefault ~= 1 then
+        qtAstralQOL_DB.notify = true
+        qtAstralQOL_DB._notifyDefault = 1
+    end
+    if qtAstralQOL_DB._dockAllStats ~= 1 then
+        if IsAddOnLoaded and IsAddOnLoaded("AllStats") then
+            qtAstralQOL_DB.charDock = false
+        end
+        qtAstralQOL_DB._dockAllStats = 1
     end
     return qtAstralQOL_DB
 end
