@@ -469,6 +469,7 @@ local function Capture()
                 zone  = zone,
                 title = name,
                 prog  = Clean(ProgressText(s, s.title), 40),
+                idx   = tonumber(s.idx),
             }
         end
     end
@@ -522,6 +523,65 @@ function Q.RequestCallboardSync()
     Prune()
     Send("R^" .. VERSION)
     Q.BroadcastCallboard(true)
+end
+
+function Q.OpenDailyCallboard()
+    local PA = Q.PA()
+    local M = PA and PA.DailyCallboard
+    if M and M.Open then
+        M:Open()
+    elseif _G.ProjectAstralDailyCallboardFrame then
+        _G.ProjectAstralDailyCallboardFrame:Show()
+    end
+end
+
+local function LocalSlotIdx(q)
+    if not q then return end
+    if q.idx then return q.idx end
+    local PA = Q.PA()
+    local slots = PA and PA.DailyCallboard and PA.DailyCallboard.slots
+    if not slots then return end
+    local qid = tonumber(q.qid)
+    if not qid or qid <= 0 then return end
+    for _, s in pairs(slots) do
+        if tonumber(s.qid) == qid and tonumber(s.status) == 1 then
+            return s.idx
+        end
+    end
+end
+
+function Q.TurnInCallboard(q)
+    local idx = LocalSlotIdx(q)
+    local PA = Q.PA()
+    local M = PA and PA.DailyCallboard
+    if idx and M and M.TurnIn then
+        M:TurnIn(idx)
+    else
+        Q.OpenDailyCallboard()
+    end
+end
+
+function Q.ShareCallboardQuest(q, who)
+    if not q then return end
+    local cat = CAT_LABEL[q.cat] or "Quest"
+    local where = q.dung ~= "" and q.dung or (q.zone ~= "" and ZoneShort(q.zone) or "")
+    local npc = q.title or ""
+    local parts = { "[" .. cat .. "]" }
+    if where ~= "" then parts[#parts + 1] = where end
+    if npc ~= "" then parts[#parts + 1] = npc end
+    if q.prog and q.prog ~= "" then parts[#parts + 1] = q.prog end
+    if q.done then parts[#parts + 1] = "ready" end
+    if who and who ~= "" then parts[#parts + 1] = "(" .. who .. ")" end
+    local msg = table.concat(parts, " ")
+    if #msg > 240 then msg = msg:sub(1, 240) end
+    local ch = Channel()
+    if ch == "RAID" then
+        SendChatMessage(msg, "RAID")
+    elseif ch == "PARTY" then
+        SendChatMessage(msg, "PARTY")
+    else
+        SendChatMessage(msg, "SAY")
+    end
 end
 
 local pending = {}
@@ -771,8 +831,15 @@ local function ShowCallTip(owner, q, who)
     end
 
     local foot = (q.tok or 0) .. " tokens"
-    if q.done then
-        foot = foot .. "   |cff66ff66Ready to turn in|r"
+    local mine = not who or who == PlayerName()
+    if q.done or QuestDone(q) then
+        if mine then
+            foot = foot .. "   |cff66ff66Click to turn in  Shift: send|r"
+        else
+            foot = foot .. "   |cff66ff66Ready|r"
+        end
+    else
+        foot = foot .. "   |cff888888Click: board  Shift: send|r"
     end
     f.foot:SetText(foot)
 
@@ -791,13 +858,14 @@ local function FillRow(r, left, tok, done, q, who)
     r.label:SetText(left or "")
     r.label:ClearAllPoints()
     if r.check then
-        if done == nil then
-            r.check:Hide()
-            r.label:SetPoint("LEFT", 8, 0)
-        else
+        if done then
             r.check:Show()
-            r.check:SetChecked(done and true or false)
+            r.check:SetChecked(true)
             r.label:SetPoint("LEFT", 22, 0)
+        else
+            r.check:Hide()
+            r.check:SetChecked(false)
+            r.label:SetPoint("LEFT", 8, 0)
         end
     else
         r.label:SetPoint("LEFT", 8, 0)
@@ -817,9 +885,22 @@ local function FillRow(r, left, tok, done, q, who)
             ShowCallTip(self, q, who)
         end)
         r:SetScript("OnLeave", HideCallTip)
+        r:SetScript("OnMouseUp", function()
+            if IsShiftKeyDown() then
+                Q.ShareCallboardQuest(q, who)
+                return
+            end
+            local mine = not who or who == PlayerName()
+            if mine and QuestDone(q) then
+                Q.TurnInCallboard(q)
+            else
+                Q.OpenDailyCallboard()
+            end
+        end)
     else
         r:SetScript("OnEnter", nil)
         r:SetScript("OnLeave", nil)
+        r:SetScript("OnMouseUp", nil)
     end
 end
 
@@ -880,7 +961,7 @@ local function RenderParty(w)
                 local r = AcquireRow()
                 Place(r, y, w)
                 r.bg:SetVertexColor(c[1], c[2], c[3], i % 2 == 0 and 0.16 or 0.08)
-                FillRow(r, QuestLeft(q), (q.tok or 0) .. "T", QuestDone(q), q)
+                FillRow(r, QuestLeft(q), (q.tok or 0) .. "T", QuestDone(q), q, name)
                 y = y + ROW_H
             end
         end
@@ -898,18 +979,19 @@ local function RenderTable(w)
                 local q = snap.quests[i]
                 local key, label, cat
                 local catName = CAT_LABEL[q.cat] or "?"
-                if q.zone and q.zone ~= "" then
+                cat = q.cat
+                if q.cat == 2 or q.cat == 3 or q.cat == 11 then
+                    key = tostring(q.cat) .. ":c"
+                    label = catName
+                elseif q.zone and q.zone ~= "" then
                     key = tostring(q.cat) .. ":z:" .. q.zone
                     label = ZoneShort(q.zone)
-                    cat = q.cat
                 elseif q.dung and q.dung ~= "" then
                     key = tostring(q.cat) .. ":d:" .. q.dung
                     label = catName .. "  " .. q.dung
-                    cat = q.cat
                 else
                     key = tostring(q.cat) .. ":c"
                     label = catName
-                    cat = q.cat
                 end
                 if not buckets[key] then
                     buckets[key] = { label = label, cat = cat, rows = {} }
@@ -934,6 +1016,8 @@ local function RenderTable(w)
         y = y + HEADER_H
 
         table.sort(g.rows, function(a, b)
+            local za, zb = a.q.zone or "", b.q.zone or ""
+            if za ~= zb then return za < zb end
             if a.q.title == b.q.title then return a.name < b.name end
             return (a.q.title or "") < (b.q.title or "")
         end)
@@ -942,9 +1026,7 @@ local function RenderTable(w)
             local r = AcquireRow()
             Place(r, y, w)
             r.bg:SetVertexColor(c[1], c[2], c[3], i % 2 == 0 and 0.14 or 0.07)
-            local ready = e.q.done and "  |cff66ff66ready|r" or ""
-            local npc = (e.q.title and e.q.title ~= "") and ("  " .. e.q.title) or ""
-            FillRow(r, e.name .. npc .. ready, (e.q.tok or 0) .. "T", QuestDone(e.q), e.q, e.name)
+            FillRow(r, QuestLeft(e.q), (e.q.tok or 0) .. "T", QuestDone(e.q), e.q, e.name)
             y = y + ROW_H
         end
         y = y + 5
@@ -986,24 +1068,110 @@ local function MakePanel()
         Q.RefreshCallboardPanel()
     end)
 
-    scroll = CreateFrame("ScrollFrame", "qtAstralQOL_PartyCallboardScroll", panel, "UIPanelScrollFrameTemplate")
+    local boardBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    boardBtn:SetSize(52, 18)
+    boardBtn:SetPoint("RIGHT", toggleBtn, "LEFT", -4, 0)
+    boardBtn:SetText("Board")
+    boardBtn:SetScript("OnClick", Q.OpenDailyCallboard)
+
+    scroll = CreateFrame("ScrollFrame", "qtAstralQOL_PartyCallboardScroll", panel)
     scroll:SetPoint("TOPLEFT", 8, -32)
-    scroll:SetPoint("BOTTOMRIGHT", -28, 8)
+    scroll:SetPoint("BOTTOMRIGHT", -10, 10)
     scroll:EnableMouseWheel(true)
+    scroll:EnableMouse(true)
 
     content = CreateFrame("Frame", nil, scroll)
     content:SetWidth(1)
     content:SetHeight(1)
     scroll:SetScrollChild(content)
+
+    local track = CreateFrame("Frame", nil, panel)
+    track:SetWidth(6)
+    track:SetPoint("BOTTOMRIGHT", -3, 4)
+    track:SetPoint("TOPRIGHT", -3, -34)
+    track:SetFrameLevel(panel:GetFrameLevel() + 6)
+    local trackBg = track:CreateTexture(nil, "BACKGROUND")
+    trackBg:SetAllPoints()
+    trackBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    trackBg:SetVertexColor(0.12, 0.14, 0.20, 0.7)
+
+    local thumb = CreateFrame("Button", nil, track)
+    thumb:SetHeight(18)
+    thumb:SetPoint("BOTTOMLEFT", 0, 0)
+    thumb:SetPoint("BOTTOMRIGHT", 0, 0)
+    local thumbBg = thumb:CreateTexture(nil, "ARTWORK")
+    thumbBg:SetAllPoints()
+    thumbBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    thumbBg:SetVertexColor(0.42, 0.52, 0.78, 0.95)
+    thumb:RegisterForDrag("LeftButton")
+    panel.scrollTrack = track
+    panel.scrollThumb = thumb
+
+    local function MaxScroll()
+        if not (scroll and content) then return 0 end
+        return math.max(0, content:GetHeight() - scroll:GetHeight())
+    end
+
+    local function LayoutThumb()
+        local maxs = MaxScroll()
+        local view = scroll:GetHeight() or 1
+        local total = content:GetHeight() or 1
+        if maxs <= 0 then
+            track:Hide()
+            return
+        end
+        track:Show()
+        local trackH = track:GetHeight() or 1
+        local thumbH = math.max(14, math.min(trackH, trackH * view / total))
+        thumb:SetHeight(thumbH)
+        local y = (1 - (scroll:GetVerticalScroll() / maxs)) * (trackH - thumbH)
+        thumb:ClearAllPoints()
+        thumb:SetPoint("BOTTOMLEFT", 0, y)
+        thumb:SetPoint("BOTTOMRIGHT", 0, y)
+    end
+    panel.LayoutThumb = LayoutThumb
+
+    local function ScrollTo(offset)
+        local maxs = MaxScroll()
+        scroll:SetVerticalScroll(math.max(0, math.min(maxs, offset)))
+        LayoutThumb()
+    end
+
     scroll:SetScript("OnMouseWheel", function(self, delta)
-        local maxScroll = math.max(0, content:GetHeight() - self:GetHeight())
-        local offset = math.max(0, math.min(maxScroll, self:GetVerticalScroll() - delta * 40))
-        self:SetVerticalScroll(offset)
+        ScrollTo(self:GetVerticalScroll() - delta * 40)
+    end)
+    scroll:SetScript("OnVerticalScroll", LayoutThumb)
+
+    thumb:SetScript("OnDragStart", function(self)
+        self.drag = true
+    end)
+    thumb:SetScript("OnDragStop", function(self)
+        self.drag = nil
+    end)
+    thumb:SetScript("OnMouseUp", function(self)
+        self.drag = nil
+    end)
+    thumb:SetScript("OnUpdate", function(self)
+        if not self.drag then return end
+        local _, cy = GetCursorPosition()
+        local scale = self:GetEffectiveScale() or 1
+        cy = cy / scale
+        local top, bot = track:GetTop(), track:GetBottom()
+        local trackH = (top or 0) - (bot or 0)
+        local thumbH = self:GetHeight() or 14
+        local y = cy - (bot or 0) - thumbH / 2
+        y = math.max(0, math.min(trackH - thumbH, y))
+        local maxs = MaxScroll()
+        local pct = 1
+        if trackH > thumbH then
+            pct = 1 - (y / (trackH - thumbH))
+        end
+        ScrollTo(pct * maxs)
     end)
 
     emptyLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     emptyLabel:SetPoint("TOPLEFT", 14, -40)
-    emptyLabel:SetPoint("TOPRIGHT", -30, -40)
+    emptyLabel:SetPoint("TOPRIGHT", -12, -40)
     emptyLabel:SetJustifyH("LEFT")
     emptyLabel:SetTextColor(0.55, 0.55, 0.6)
     emptyLabel:Hide()
@@ -1050,6 +1218,9 @@ function Q.RefreshCallboardPanel()
     if scroll then
         scroll:SetVerticalScroll(0)
     end
+    if panel and panel.LayoutThumb then
+        panel.LayoutThumb()
+    end
 end
 
 function Q.ShowCallboardPanel()
@@ -1095,6 +1266,7 @@ local origDefaults = Q.Defaults
 function Q.Defaults()
     local d = origDefaults()
     d.callboard = true
+    d.notify = true
     if d.callboardView == nil then d.callboardView = "party" end
     return d
 end
