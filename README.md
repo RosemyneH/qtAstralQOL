@@ -111,12 +111,18 @@ Edit here, `/reload` in-game. No copy step.
 
 Every merge to `main` is scanned for [Conventional Commits](https://www.conventionalcommits.org/). When there are releasable changes, [release-please](https://github.com/googleapis/release-please) opens a release pull request with an updated changelog and TOC version. Merging that PR tags a GitHub Release and attaches an AddOns zip.
 
+Versions are two-part: **1.1**, **1.2**, … **1.20**, then **2.0**. Each releasable merge bumps the second number. There is no `1.1.1` patch line.
+
 | Prefix | Version bump | Example |
 | :---: | :---: | :--- |
-| `feat:` | minor | `feat: add inspect gem dock` |
-| `fix:` | patch | `fix: toast layout beside disenchant` |
-| `feat!:` or `BREAKING CHANGE:` | major | `feat!: require a newer ProjectAstral` |
+| `feat:` or `fix:` | 1.n → 1.n+1 | `feat: add inspect gem dock` |
 | `docs:`, `chore:`, `ci:` | no release | `docs: clarify install path` |
+
+After **1.20**, jump to **2.0** by including this footer on the commit:
+
+```text
+Release-As: 2.0
+```
 
 ---
 

@@ -1,11 +1,10 @@
 # Changelog
 
 All notable changes to qtAstralQOL are documented here.
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project uses [Semantic Versioning](https://semver.org/).
+Versions are `1.1` through `1.20`, then `2.0`.
 
 
-## [1.0.0](https://github.com/RosemyneH/qtAstralQOL/releases/tag/v1.0.0) (2026-09-07)
+## [1.1](https://github.com/RosemyneH/qtAstralQOL/releases/tag/v1.1) (2026-09-07)
 
 ### Features
 
