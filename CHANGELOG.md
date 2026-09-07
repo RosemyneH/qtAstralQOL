@@ -3,6 +3,15 @@
 Versions are `1.1` through `1.20`, then `2.0`.
 
 
+## [1.6](https://github.com/RosemyneH/qtAstralQOL/releases/tag/v1.6) (2026-09-07)
+
+### Features
+
+* Astral Disenchant button on the gem fusion panel
+* Gem loadouts socket the highest owned rank when a listed gem is missing
+* Socket pips mark when a higher tier of the same family is in stash
+
+
 ## [1.5](https://github.com/RosemyneH/qtAstralQOL/releases/tag/v1.5) (2026-09-07)
 
 ### Features
