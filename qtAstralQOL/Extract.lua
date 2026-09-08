@@ -2,6 +2,7 @@ local Q = qtAstralQOL
 
 local ROW_H = 22
 local hookedImport = false
+local gearSetItems = {}
 
 local function SkipMap()
     local db = Q.DB()
@@ -15,9 +16,29 @@ local function Presets()
     return db.extractPresets
 end
 
+function Q.RefreshEquipmentSetSkip()
+    for id in pairs(gearSetItems) do gearSetItems[id] = nil end
+    if type(GetNumEquipmentSets) ~= "function" or type(GetEquipmentSetItemIDs) ~= "function" then return end
+    for i = 1, GetNumEquipmentSets() do
+        local name = GetEquipmentSetInfo(i)
+        if name then
+            local ids = GetEquipmentSetItemIDs(name)
+            if ids then
+                for _, itemId in pairs(ids) do
+                    itemId = tonumber(itemId)
+                    if itemId and itemId > 0 then gearSetItems[itemId] = true end
+                end
+            end
+        end
+    end
+end
+
 function Q.IsExtractSkipped(itemId)
     itemId = tonumber(itemId)
-    return itemId and SkipMap()[itemId] and true or false
+    if not itemId then return false end
+    if SkipMap()[itemId] then return true end
+    if Q.DB().extractSkipGearSets and gearSetItems[itemId] then return true end
+    return false
 end
 
 local pendingAnchor
@@ -168,7 +189,19 @@ local function RefreshSkipList()
         pop.preset:SetText(db.extractPreset or "")
     end
     if pop.count then
-        pop.count:SetText(#ids .. " skipped")
+        local n = #ids
+        local gear = 0
+        if Q.DB().extractSkipGearSets then
+            for id in pairs(gearSetItems) do gear = gear + 1 end
+        end
+        if gear > 0 then
+            pop.count:SetText(n .. " skipped  ·  " .. gear .. " from gear sets")
+        else
+            pop.count:SetText(n .. " skipped")
+        end
+    end
+    if pop.gearChk then
+        pop.gearChk:SetChecked(Q.DB().extractSkipGearSets and true or false)
     end
 end
 
@@ -236,7 +269,7 @@ end
 local function BuildPopup(parent)
     if pop then return pop end
     pop = CreateFrame("Frame", "qtAstralQOL_ExtractSkip", parent)
-    pop:SetSize(220, 320)
+    pop:SetSize(220, 342)
     pop:SetPoint("TOPLEFT", parent, "TOPRIGHT", 8, 0)
     pop:SetFrameStrata("HIGH")
     pop:SetBackdrop({
@@ -247,7 +280,10 @@ local function BuildPopup(parent)
     })
     pop:Hide()
     pop:EnableMouse(true)
-    pop:SetScript("OnShow", RefreshSkipList)
+    pop:SetScript("OnShow", function()
+        Q.RefreshEquipmentSetSkip()
+        RefreshSkipList()
+    end)
     pop:SetScript("OnReceiveDrag", function()
         local id = CursorItemId()
         if id then
@@ -278,8 +314,27 @@ local function BuildPopup(parent)
     pop.count = pop:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     pop.count:SetPoint("TOP", hint, "BOTTOM", 0, -6)
 
+    pop.gearChk = CreateFrame("CheckButton", nil, pop, "UICheckButtonTemplate")
+    pop.gearChk:SetPoint("TOPLEFT", pop.count, "BOTTOMLEFT", -4, -2)
+    pop.gearChk:SetScale(0.72)
+    local gearLbl = pop:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    gearLbl:SetPoint("LEFT", pop.gearChk, "RIGHT", 0, 0)
+    gearLbl:SetText("Skip equipment set items")
+    gearLbl:SetTextColor(0.82, 0.90, 0.98)
+    pop.gearChk:SetScript("OnClick", function(self)
+        Q.DB().extractSkipGearSets = self:GetChecked() and true or false
+        RefreshSkipList()
+    end)
+    pop.gearChk:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Equipment sets")
+        GameTooltip:AddLine("Items saved in any equipment manager set are not auto-imported.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    pop.gearChk:SetScript("OnLeave", GameTooltip_Hide)
+
     local sf = CreateFrame("ScrollFrame", "qtAstralQOL_ExtractSkipScroll", pop, "UIPanelScrollFrameTemplate")
-    sf:SetPoint("TOPLEFT", 16, -78)
+    sf:SetPoint("TOPLEFT", 16, -98)
     sf:SetPoint("BOTTOMRIGHT", -36, 78)
     pop.list = CreateFrame("Frame", nil, sf)
     pop.list:SetWidth(160)
@@ -347,6 +402,7 @@ local function WrapImport(frame)
     local orig = frame.importBtn:GetScript("OnClick")
     if not orig then return end
     frame.importBtn:SetScript("OnClick", function(self, ...)
+        Q.RefreshEquipmentSetSkip()
         local real = GetContainerItemID
         GetContainerItemID = function(bag, slot)
             local id
@@ -380,10 +436,17 @@ function Q.HookExtract(frame)
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText("Skip list")
-        GameTooltip:AddLine("Items on this list are not Auto Imported into gem extraction. Save named presets and cycle them with < >.", 1, 1, 1, true)
+        GameTooltip:AddLine("Items on this list are not Auto Imported into gem extraction. Equipment set items can be auto-skipped. Save named presets and cycle them with < >.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", GameTooltip_Hide)
     frame.qolSkipBtn = btn
     if Q.LayoutAstralTableButtons then Q.LayoutAstralTableButtons(frame) end
 end
+
+local gearBoot = CreateFrame("Frame")
+gearBoot:RegisterEvent("PLAYER_LOGIN")
+gearBoot:RegisterEvent("EQUIPMENT_SETS_CHANGED")
+gearBoot:SetScript("OnEvent", function()
+    Q.RefreshEquipmentSetSkip()
+end)

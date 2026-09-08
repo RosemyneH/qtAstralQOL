@@ -74,6 +74,7 @@ function Q.Defaults()
         charDock   = true,
         inspectTab = true,
         extractSkip = {},
+        extractSkipGearSets = true,
         extractPresets = {},
         extractPreset = "",
         gemLoadouts = {},
