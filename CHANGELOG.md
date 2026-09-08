@@ -3,6 +3,13 @@
 Versions are `1.1` through `1.20`, then `2.0`.
 
 
+## [1.8](https://github.com/RosemyneH/qtAstralQOL/releases/tag/v1.8) (2026-09-07)
+
+### Features
+
+* Skip list can exclude items saved in equipment manager sets from gem extraction auto-import
+
+
 ## [1.7](https://github.com/RosemyneH/qtAstralQOL/releases/tag/v1.7) (2026-09-07)
 
 ### Features
