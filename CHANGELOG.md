@@ -3,6 +3,13 @@
 Versions are `1.1` through `1.20`, then `2.0`.
 
 
+## [1.9](https://github.com/RosemyneH/qtAstralQOL/releases/tag/v1.9) (2026-09-10)
+
+### Bug Fixes
+
+* Astral Disenchant opens from qtAstralQOL again after Project Astral moved handler registration to AIO
+
+
 ## [1.8](https://github.com/RosemyneH/qtAstralQOL/releases/tag/v1.8) (2026-09-07)
 
 ### Features
