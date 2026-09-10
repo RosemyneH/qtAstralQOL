@@ -43,6 +43,79 @@ end
 
 local pendingAnchor
 local openWait
+local disenchantShow
+local disenchantHandlers
+local hookedDisenchantHandlers
+
+local function TryInstallDisenchantOpen()
+    if not disenchantHandlers or type(disenchantHandlers.Show) ~= "function" then
+        return false
+    end
+    disenchantShow = disenchantHandlers.Show
+    local D = Q.PA() and Q.PA().disenchant
+    if D then
+        D.Open = function(payload)
+            disenchantShow(nil, payload or {})
+        end
+    end
+    return true
+end
+
+local function HookDisenchantHandlers()
+    if hookedDisenchantHandlers then return end
+    local AIO = _G.AIO
+    if not AIO or not AIO.AddHandlers then return end
+    local orig = AIO.AddHandlers
+    function AIO.AddHandlers(name, tbl)
+        local ret = orig(name, tbl)
+        if name == "AstralDisenchant" then
+            disenchantHandlers = ret
+            if not TryInstallDisenchantOpen() then
+                local probe = CreateFrame("Frame")
+                local acc = 0
+                probe:SetScript("OnUpdate", function(self, dt)
+                    acc = acc + dt
+                    if TryInstallDisenchantOpen() or acc > 3 then
+                        self:SetScript("OnUpdate", nil)
+                    end
+                end)
+            end
+        end
+        return ret
+    end
+    hookedDisenchantHandlers = true
+end
+
+HookDisenchantHandlers()
+
+local disenchantBoot = CreateFrame("Frame")
+disenchantBoot:RegisterEvent("PLAYER_LOGIN")
+disenchantBoot:SetScript("OnEvent", function(self)
+    if TryInstallDisenchantOpen() then
+        self:UnregisterAllEvents()
+        return
+    end
+    local acc = 0
+    self:SetScript("OnUpdate", function(frame, dt)
+        acc = acc + dt
+        if TryInstallDisenchantOpen() or acc > 5 then
+            frame:SetScript("OnUpdate", nil)
+            frame:UnregisterAllEvents()
+        end
+    end)
+end)
+
+local function RequestDisenchantOpen()
+    TryInstallDisenchantOpen()
+    local D = Q.PA() and Q.PA().disenchant
+    if D and D.Open then
+        D.Open()
+        return
+    end
+    if disenchantShow then
+        disenchantShow(nil, {})
+    end
+end
 
 local function PresentAstralDisenchant()
     local f = _G.ProjectAstralAstralDisenchant
@@ -78,10 +151,7 @@ end
 
 function Q.OpenAstralDisenchant(anchor)
     pendingAnchor = anchor
-    local PA = Q.PA()
-    if PA and PA.disenchant and PA.disenchant.Open then
-        PA.disenchant.Open()
-    end
+    RequestDisenchantOpen()
     if _G.AIO and _G.AIO.Handle then
         _G.AIO.Handle("AstralDisenchantServer", "Open")
     end
